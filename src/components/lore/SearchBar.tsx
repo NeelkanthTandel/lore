@@ -1,19 +1,18 @@
-import { useState } from 'react';
 import { Node, useReactFlow } from '@xyflow/react';
+import { useState } from 'react';
 import { Search } from 'lucide-react';
-import { CharacterNodeData } from '@/types/lore';
 
 export default function SearchBar() {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const { getNodes, setCenter } = useReactFlow();
 
-  const nodes = getNodes() as Node<CharacterNodeData>[];
+  const nodes = getNodes();
   const filtered = query.trim()
-    ? nodes.filter(n => n.data.name?.toLowerCase().includes(query.toLowerCase()))
+    ? nodes.filter(n => (n.data.name as string)?.toLowerCase().includes(query.toLowerCase()))
     : [];
 
-  const focusNode = (node: Node<CharacterNodeData>) => {
+  const focusNode = (node: Node) => {
     setCenter(node.position.x + 40, node.position.y + 40, { zoom: 1.5, duration: 600 });
     setQuery('');
     setOpen(false);
@@ -39,7 +38,7 @@ export default function SearchBar() {
               onClick={() => focusNode(n)}
               className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors truncate"
             >
-              {n.data.name}
+              {n.data.name as string}
             </button>
           ))}
         </div>

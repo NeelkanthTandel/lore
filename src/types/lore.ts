@@ -1,4 +1,5 @@
 export interface CharacterNodeData {
+  [key: string]: unknown;
   name: string;
   photo: string;
   faction?: string;
@@ -7,6 +8,7 @@ export interface CharacterNodeData {
 }
 
 export interface RelationshipEdgeData {
+  [key: string]: unknown;
   label: string;
   direction: 'one-way' | 'two-way' | 'undirected';
   color: string;
