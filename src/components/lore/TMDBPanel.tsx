@@ -43,9 +43,17 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
     const type = isTV ? 'tv' : 'movie';
     const creditsEndpoint = isTV ? 'aggregate_credits' : 'credits';
     try {
-      const res = await fetch(`https://api.themoviedb.org/3/${type}/${item.id}/credits?api_key=${apiKey}`);
+      const res = await fetch(`https://api.themoviedb.org/3/${type}/${item.id}/${creditsEndpoint}?api_key=${apiKey}`);
       const data = await res.json();
-      setCast(data.cast?.slice(0, 30) || []);
+      const rawCast = data.cast?.slice(0, 50) || [];
+      // aggregate_credits uses 'roles' array; normalize to flat character field
+      const normalized = rawCast.map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        character: c.character || c.roles?.[0]?.character || c.name,
+        profile_path: c.profile_path,
+      }));
+      setCast(normalized);
       setStep('cast');
       setSelected(new Set());
     } catch { setCast([]); }
