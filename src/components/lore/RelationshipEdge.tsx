@@ -59,13 +59,43 @@ const RelationshipEdge = memo(({
             <path d="M 10 0 L 0 5 L 10 10 z" fill={color} />
           </marker>
         )}
+        {/* Glow filter for selected edges */}
+        <filter id={`glow-${id}`} x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="3" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
       </defs>
+      {/* Invisible wider path for easier click targeting */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={20}
+        style={{ cursor: 'pointer' }}
+      />
+      {/* Glow layer when selected */}
+      {selected && (
+        <BaseEdge
+          path={edgePath}
+          style={{
+            stroke: color,
+            strokeWidth: 6,
+            strokeDasharray,
+            opacity: 0.25,
+            filter: `url(#glow-${id})`,
+          }}
+        />
+      )}
       <BaseEdge
         path={edgePath}
         style={{
           stroke: color,
-          strokeWidth: selected ? 3 : 2,
+          strokeWidth: selected ? 2.5 : 1.5,
           strokeDasharray,
+          strokeLinecap: 'round',
         }}
         markerEnd={markerEnd}
         markerStart={markerStart}
@@ -78,7 +108,11 @@ const RelationshipEdge = memo(({
               transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
               pointerEvents: 'all',
             }}
-            className="text-[10px] px-2 py-0.5 rounded bg-card/90 backdrop-blur-sm border border-border text-foreground whitespace-nowrap"
+            className={`text-[10px] px-2.5 py-0.5 rounded-full backdrop-blur-md border whitespace-nowrap font-medium tracking-wide ${
+              selected
+                ? 'bg-primary/15 border-primary/40 text-primary shadow-lg'
+                : 'bg-card/80 border-border/60 text-foreground/80'
+            }`}
           >
             {data.label}
           </div>

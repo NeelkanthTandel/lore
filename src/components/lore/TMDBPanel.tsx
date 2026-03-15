@@ -4,7 +4,8 @@ import { TMDBSearchResult, TMDBCastMember } from '@/types/lore';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { X, Search, Film, Loader2 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { X, Search, Film, Loader2, Check, AlertTriangle } from 'lucide-react';
 
 interface Props {
   open: boolean;
@@ -13,9 +14,8 @@ interface Props {
 }
 
 const TMDB_IMG = 'https://image.tmdb.org/t/p/w185';
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+const CACHE_TTL = 30 * 60 * 1000;
 
-// Simple sessionStorage cache with TTL
 function getCached<T>(key: string): T | null {
   try {
     const raw = sessionStorage.getItem(`tmdb:${key}`);
@@ -32,8 +32,10 @@ function getCached<T>(key: string): T | null {
 function setCache(key: string, data: unknown) {
   try {
     sessionStorage.setItem(`tmdb:${key}`, JSON.stringify({ data, ts: Date.now() }));
-  } catch { /* quota exceeded, ignore */ }
+  } catch { /* quota exceeded */ }
 }
+
+type Step = 'search' | 'season' | 'cast';
 
 export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
   const [query, setQuery] = useState('');
@@ -42,11 +44,16 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [step, setStep] = useState<'search' | 'cast'>('search');
+  const [step, setStep] = useState<Step>('search');
   const [selectedTitle, setSelectedTitle] = useState('');
   const [searchPage, setSearchPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [castFilter, setCastFilter] = useState('');
+  const [addedCount, setAddedCount] = useState(0);
+  // Season selection state
+  const [selectedItem, setSelectedItem] = useState<TMDBSearchResult | null>(null);
+  const [totalSeasons, setTotalSeasons] = useState(0);
+  const [selectedSeason, setSelectedSeason] = useState<string>('all');
   const lastQuery = useRef('');
 
   const apiKey = getTmdbApiKey();
@@ -90,13 +97,60 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
     }
   };
 
-  const fetchCast = async (item: TMDBSearchResult) => {
+  const handleSelectResult = async (item: TMDBSearchResult) => {
+    if (item.media_type === 'tv') {
+      // Fetch TV details to get number of seasons
+      setLoading(true);
+      setSelectedItem(item);
+      setSelectedTitle(item.name || item.title || '');
+
+      const cacheKey = `tvdetails:${item.id}`;
+      const cached = getCached<{ number_of_seasons: number }>(cacheKey);
+
+      try {
+        let details: { number_of_seasons: number };
+        if (cached) {
+          details = cached;
+        } else {
+          const res = await fetch(
+            `https://api.themoviedb.org/3/tv/${item.id}?api_key=${apiKey}`
+          );
+          details = await res.json();
+          setCache(cacheKey, details);
+        }
+        setTotalSeasons(details.number_of_seasons || 1);
+        setSelectedSeason('all');
+        setStep('season');
+      } catch {
+        // Fallback: skip season selection
+        fetchCast(item, 'all');
+      }
+      setLoading(false);
+    } else {
+      fetchCast(item, 'all');
+    }
+  };
+
+  const fetchCast = async (item: TMDBSearchResult | null, season: string) => {
+    if (!item) return;
     setLoading(true);
     setSelectedTitle(item.title || item.name || '');
     const isTV = item.media_type === 'tv';
-    const type = isTV ? 'tv' : 'movie';
-    const creditsEndpoint = isTV ? 'aggregate_credits' : 'credits';
-    const cacheKey = `cast:${type}:${item.id}`;
+
+    let cacheKey: string;
+    let url: string;
+
+    if (isTV && season !== 'all') {
+      cacheKey = `cast:tv:${item.id}:s${season}`;
+      url = `https://api.themoviedb.org/3/tv/${item.id}/season/${season}/credits?api_key=${apiKey}`;
+    } else if (isTV) {
+      cacheKey = `cast:tv:${item.id}`;
+      url = `https://api.themoviedb.org/3/tv/${item.id}/aggregate_credits?api_key=${apiKey}`;
+    } else {
+      cacheKey = `cast:movie:${item.id}`;
+      url = `https://api.themoviedb.org/3/movie/${item.id}/credits?api_key=${apiKey}`;
+    }
+
     const cached = getCached<TMDBCastMember[]>(cacheKey);
 
     try {
@@ -104,9 +158,7 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
       if (cached) {
         normalized = cached;
       } else {
-        const res = await fetch(
-          `https://api.themoviedb.org/3/${type}/${item.id}/${creditsEndpoint}?api_key=${apiKey}`
-        );
+        const res = await fetch(url);
         const data = await res.json();
         const rawCast = data.cast || [];
         normalized = rawCast.map((c: any) => ({
@@ -120,6 +172,7 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
       setCast(normalized);
       setStep('cast');
       setSelected(new Set());
+      setAddedCount(0);
     } catch { setCast([]); }
     setLoading(false);
   };
@@ -130,11 +183,19 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
       photo: c.profile_path ? `${TMDB_IMG}${c.profile_path}` : '',
     }));
     onAddCharacters(chars);
+    setAddedCount(prev => prev + chars.length);
+    setSelected(new Set());
+  };
+
+  const handleClose = () => {
     onClose();
     setStep('search');
     setCast([]);
     setResults([]);
     setQuery('');
+    setCastFilter('');
+    setAddedCount(0);
+    setSelectedItem(null);
   };
 
   if (!open) return null;
@@ -146,7 +207,7 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
           <Film className="w-4 h-4 text-primary" />
           <h3 className="text-sm font-semibold">Add from Movie/Show</h3>
         </div>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
+        <button onClick={handleClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
       </div>
 
       {!apiKey && (
@@ -155,6 +216,7 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
         </div>
       )}
 
+      {/* Search step */}
       {apiKey && step === 'search' && (
         <div className="flex flex-col flex-1 overflow-hidden">
           <div className="p-3 flex gap-2">
@@ -167,7 +229,7 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
             {results.map(r => (
               <button
                 key={r.id}
-                onClick={() => fetchCast(r)}
+                onClick={() => handleSelectResult(r)}
                 className="w-full flex items-center gap-3 p-2 rounded-md hover:bg-accent transition-colors text-left"
               >
                 {r.poster_path ? (
@@ -182,13 +244,7 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
               </button>
             ))}
             {results.length > 0 && searchPage < totalPages && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={loadMoreResults}
-                disabled={loadingMore}
-                className="w-full mt-2 text-xs text-muted-foreground"
-              >
+              <Button size="sm" variant="ghost" onClick={loadMoreResults} disabled={loadingMore} className="w-full mt-2 text-xs text-muted-foreground">
                 {loadingMore ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
                 Load more results
               </Button>
@@ -197,48 +253,111 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
         </div>
       )}
 
+      {/* Season selection step (TV only) */}
+      {apiKey && step === 'season' && (
+        <div className="flex flex-col flex-1 overflow-hidden">
+          <div className="p-3 border-b border-border">
+            <button onClick={() => { setStep('search'); setSelectedItem(null); }} className="text-xs text-primary hover:underline">← Back to search</button>
+            <p className="text-sm font-medium mt-1">{selectedTitle}</p>
+          </div>
+          <div className="p-4 space-y-4">
+            <div className="flex items-start gap-2 p-3 rounded-md bg-secondary/50 border border-border">
+              <AlertTriangle className="w-4 h-4 text-yellow-500 mt-0.5 shrink-0" />
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Some shows reveal character identities across seasons. Choose the latest season you've watched to avoid spoilers, or skip to see all characters.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">Show characters up to season:</label>
+              <Select value={selectedSeason} onValueChange={setSelectedSeason}>
+                <SelectTrigger className="h-9 text-sm bg-secondary border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All seasons</SelectItem>
+                  {Array.from({ length: totalSeasons }, (_, i) => (
+                    <SelectItem key={i + 1} value={String(i + 1)}>Season {i + 1}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                className="flex-1"
+                onClick={() => fetchCast(selectedItem, selectedSeason)}
+                disabled={loading}
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+                Show Characters
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cast step */}
       {apiKey && step === 'cast' && (() => {
         const q = castFilter.toLowerCase();
         const filteredCast = q ? cast.filter(c => c.character.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)) : cast;
         return (
-        <div className="flex flex-col flex-1 overflow-hidden">
-          <div className="p-3 border-b border-border">
-            <button onClick={() => { setStep('search'); setCastFilter(''); }} className="text-xs text-primary hover:underline">← Back to search</button>
-            <p className="text-sm font-medium mt-1">{selectedTitle}</p>
-            <p className="text-xs text-muted-foreground">{cast.length} cast members</p>
-          </div>
-          <div className="px-3 pt-2">
-            <Input value={castFilter} onChange={e => setCastFilter(e.target.value)} placeholder="Filter characters..." className="h-7 text-xs bg-secondary border-border" />
-          </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
-            {filteredCast.map(c => (
-              <label key={c.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-accent transition-colors cursor-pointer">
-                <Checkbox
-                  checked={selected.has(c.id)}
-                  onCheckedChange={checked => {
-                    const next = new Set(selected);
-                    checked ? next.add(c.id) : next.delete(c.id);
-                    setSelected(next);
-                  }}
-                />
-                {c.profile_path ? (
-                  <img src={`${TMDB_IMG}${c.profile_path}`} className="w-8 h-8 rounded-full object-cover" alt="" />
+          <div className="flex flex-col flex-1 overflow-hidden">
+            <div className="p-3 border-b border-border">
+              <button onClick={() => {
+                setCastFilter('');
+                if (selectedItem?.media_type === 'tv') {
+                  setStep('season');
+                } else {
+                  setStep('search');
+                  setSelectedItem(null);
+                }
+              }} className="text-xs text-primary hover:underline">← Back</button>
+              <p className="text-sm font-medium mt-1">{selectedTitle}</p>
+              <p className="text-xs text-muted-foreground">
+                {cast.length} cast members
+                {addedCount > 0 && <span className="text-green-500 ml-2">· {addedCount} added</span>}
+              </p>
+            </div>
+            <div className="px-3 pt-2">
+              <Input value={castFilter} onChange={e => setCastFilter(e.target.value)} placeholder="Filter characters..." className="h-7 text-xs bg-secondary border-border" />
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {filteredCast.map(c => (
+                <label key={c.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-accent transition-colors cursor-pointer">
+                  <Checkbox
+                    checked={selected.has(c.id)}
+                    onCheckedChange={checked => {
+                      const next = new Set(selected);
+                      checked ? next.add(c.id) : next.delete(c.id);
+                      setSelected(next);
+                    }}
+                  />
+                  {c.profile_path ? (
+                    <img src={`${TMDB_IMG}${c.profile_path}`} className="w-8 h-8 rounded-full object-cover" alt="" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-xs text-muted-foreground">{c.name[0]}</div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-foreground truncate">{c.character}</p>
+                    <p className="text-xs text-muted-foreground truncate">{c.name}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+            <div className="p-3 border-t border-border">
+              <Button size="sm" onClick={handleAdd} disabled={selected.size === 0} className="w-full">
+                {selected.size > 0 ? (
+                  <>Add {selected.size} Character{selected.size !== 1 ? 's' : ''}</>
+                ) : addedCount > 0 ? (
+                  <><Check className="w-3 h-3 mr-1" /> {addedCount} added — select more</>
                 ) : (
-                  <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-xs text-muted-foreground">{c.name[0]}</div>
+                  'Select characters to add'
                 )}
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-foreground truncate">{c.character}</p>
-                  <p className="text-xs text-muted-foreground truncate">{c.name}</p>
-                </div>
-              </label>
-            ))}
+              </Button>
+            </div>
           </div>
-          <div className="p-3 border-t border-border">
-            <Button size="sm" onClick={handleAdd} disabled={selected.size === 0} className="w-full">
-              Add {selected.size} Character{selected.size !== 1 ? 's' : ''}
-            </Button>
-          </div>
-        </div>
         );
       })()}
     </div>

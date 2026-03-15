@@ -13,6 +13,21 @@ interface Props {
   onClose: () => void;
 }
 
+const RELATIONSHIP_PRESETS = [
+  { label: 'Father of', direction: 'one-way' as const },
+  { label: 'Mother of', direction: 'one-way' as const },
+  { label: 'Son of', direction: 'one-way' as const },
+  { label: 'Daughter of', direction: 'one-way' as const },
+  { label: 'Married to', direction: 'two-way' as const },
+  { label: 'Sibling', direction: 'two-way' as const },
+  { label: 'Friend', direction: 'two-way' as const },
+  { label: 'Enemy', direction: 'two-way' as const },
+  { label: 'Mentor of', direction: 'one-way' as const },
+  { label: 'Works with', direction: 'two-way' as const },
+  { label: 'Loves', direction: 'one-way' as const },
+  { label: 'Betrayed', direction: 'one-way' as const },
+];
+
 export default function EdgeEditPanel({ edge, onUpdate, onClose }: Props) {
   const [label, setLabel] = useState(edge.data?.label || '');
   const [direction, setDirection] = useState<'one-way' | 'two-way' | 'undirected'>(edge.data?.direction || 'undirected');
@@ -26,13 +41,18 @@ export default function EdgeEditPanel({ edge, onUpdate, onClose }: Props) {
     setStyle(edge.data?.style || 'solid');
   }, [edge]);
 
+  const applyPreset = (preset: typeof RELATIONSHIP_PRESETS[0]) => {
+    setLabel(preset.label);
+    setDirection(preset.direction);
+  };
+
   const handleSave = () => {
     onUpdate(edge.id, { label, direction, color, style });
     onClose();
   };
 
   return (
-    <div className="absolute right-4 top-4 z-50 w-72 bg-card border border-border rounded-lg shadow-2xl p-4 space-y-3 animate-in slide-in-from-right-4 duration-200">
+    <div className="absolute right-4 top-16 z-50 w-72 bg-card/95 backdrop-blur-md border border-border rounded-xl shadow-2xl p-4 space-y-4 animate-in slide-in-from-right-4 duration-200">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">Edit Connection</h3>
         <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
@@ -40,12 +60,32 @@ export default function EdgeEditPanel({ edge, onUpdate, onClose }: Props) {
         </button>
       </div>
 
-      <div className="space-y-2">
-        <Label className="text-xs text-muted-foreground">Relationship Label</Label>
-        <Input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. father of" className="h-8 text-sm bg-secondary border-border" />
+      {/* Quick presets */}
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">Quick presets</Label>
+        <div className="flex flex-wrap gap-1">
+          {RELATIONSHIP_PRESETS.map(p => (
+            <button
+              key={p.label}
+              onClick={() => applyPreset(p)}
+              className={`text-[11px] px-2 py-1 rounded-full border transition-all ${
+                label === p.label
+                  ? 'bg-primary/20 border-primary/50 text-primary'
+                  : 'bg-secondary/50 border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">Custom label</Label>
+        <Input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. allies with" className="h-8 text-sm bg-secondary border-border" />
+      </div>
+
+      <div className="space-y-1.5">
         <Label className="text-xs text-muted-foreground">Direction</Label>
         <Select value={direction} onValueChange={v => setDirection(v as typeof direction)}>
           <SelectTrigger className="h-8 text-sm bg-secondary border-border"><SelectValue /></SelectTrigger>
@@ -57,7 +97,7 @@ export default function EdgeEditPanel({ edge, onUpdate, onClose }: Props) {
         </Select>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <Label className="text-xs text-muted-foreground">Line Style</Label>
         <Select value={style} onValueChange={v => setStyle(v as typeof style)}>
           <SelectTrigger className="h-8 text-sm bg-secondary border-border"><SelectValue /></SelectTrigger>

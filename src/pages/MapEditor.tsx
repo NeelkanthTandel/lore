@@ -267,9 +267,8 @@ function MapEditorInner() {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         selectionMode={SelectionMode.Partial}
-        selectionOnDrag
-        panOnDrag={[1]}
-        selectNodesOnDrag={false}
+        panOnDrag
+        selectionOnDrag={false}
         fitView
         deleteKeyCode={['Backspace', 'Delete']}
         style={{ backgroundColor: 'hsl(240 10% 4%)' }}
