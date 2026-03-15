@@ -46,6 +46,7 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
   const [selectedTitle, setSelectedTitle] = useState('');
   const [searchPage, setSearchPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [castFilter, setCastFilter] = useState('');
   const lastQuery = useRef('');
 
   const apiKey = getTmdbApiKey();
