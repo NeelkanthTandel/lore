@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { getTmdbApiKey } from '@/store/mapStore';
 import { TMDBSearchResult, TMDBCastMember } from '@/types/lore';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,27 @@ interface Props {
 }
 
 const TMDB_IMG = 'https://image.tmdb.org/t/p/w185';
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+// Simple sessionStorage cache with TTL
+function getCached<T>(key: string): T | null {
+  try {
+    const raw = sessionStorage.getItem(`tmdb:${key}`);
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw);
+    if (Date.now() - ts > CACHE_TTL) {
+      sessionStorage.removeItem(`tmdb:${key}`);
+      return null;
+    }
+    return data as T;
+  } catch { return null; }
+}
+
+function setCache(key: string, data: unknown) {
+  try {
+    sessionStorage.setItem(`tmdb:${key}`, JSON.stringify({ data, ts: Date.now() }));
+  } catch { /* quota exceeded, ignore */ }
+}
 
 export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
   const [query, setQuery] = useState('');
@@ -20,20 +41,52 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
   const [cast, setCast] = useState<TMDBCastMember[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [step, setStep] = useState<'search' | 'cast'>('search');
   const [selectedTitle, setSelectedTitle] = useState('');
+  const [searchPage, setSearchPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const lastQuery = useRef('');
 
   const apiKey = getTmdbApiKey();
 
-  const searchTMDB = async () => {
+  const searchTMDB = async (page = 1, append = false) => {
     if (!query.trim() || !apiKey) return;
-    setLoading(true);
+    const isNew = page === 1;
+    isNew ? setLoading(true) : setLoadingMore(true);
+
+    const cacheKey = `search:${query.trim().toLowerCase()}:${page}`;
+    const cached = getCached<{ results: TMDBSearchResult[]; total_pages: number }>(cacheKey);
+
     try {
-      const res = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${apiKey}&query=${encodeURIComponent(query)}&page=1`);
-      const data = await res.json();
-      setResults((data.results || []).filter((r: TMDBSearchResult) => r.media_type === 'movie' || r.media_type === 'tv'));
-    } catch { setResults([]); }
-    setLoading(false);
+      let data: { results: TMDBSearchResult[]; total_pages: number };
+      if (cached) {
+        data = cached;
+      } else {
+        const res = await fetch(
+          `https://api.themoviedb.org/3/search/multi?api_key=${apiKey}&query=${encodeURIComponent(query)}&page=${page}`
+        );
+        data = await res.json();
+        setCache(cacheKey, data);
+      }
+
+      const filtered = (data.results || []).filter(
+        (r: TMDBSearchResult) => r.media_type === 'movie' || r.media_type === 'tv'
+      );
+      setResults(append ? prev => [...prev, ...filtered] : filtered);
+      setTotalPages(data.total_pages || 1);
+      setSearchPage(page);
+      lastQuery.current = query;
+    } catch {
+      if (!append) setResults([]);
+    }
+    isNew ? setLoading(false) : setLoadingMore(false);
+  };
+
+  const loadMoreResults = () => {
+    if (searchPage < totalPages) {
+      searchTMDB(searchPage + 1, true);
+    }
   };
 
   const fetchCast = async (item: TMDBSearchResult) => {
@@ -42,17 +95,27 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
     const isTV = item.media_type === 'tv';
     const type = isTV ? 'tv' : 'movie';
     const creditsEndpoint = isTV ? 'aggregate_credits' : 'credits';
+    const cacheKey = `cast:${type}:${item.id}`;
+    const cached = getCached<TMDBCastMember[]>(cacheKey);
+
     try {
-      const res = await fetch(`https://api.themoviedb.org/3/${type}/${item.id}/${creditsEndpoint}?api_key=${apiKey}`);
-      const data = await res.json();
-      const rawCast = data.cast?.slice(0, 50) || [];
-      // aggregate_credits uses 'roles' array; normalize to flat character field
-      const normalized = rawCast.map((c: any) => ({
-        id: c.id,
-        name: c.name,
-        character: c.character || c.roles?.[0]?.character || c.name,
-        profile_path: c.profile_path,
-      }));
+      let normalized: TMDBCastMember[];
+      if (cached) {
+        normalized = cached;
+      } else {
+        const res = await fetch(
+          `https://api.themoviedb.org/3/${type}/${item.id}/${creditsEndpoint}?api_key=${apiKey}`
+        );
+        const data = await res.json();
+        const rawCast = data.cast || [];
+        normalized = rawCast.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          character: c.character || c.roles?.[0]?.character || c.name,
+          profile_path: c.profile_path,
+        }));
+        setCache(cacheKey, normalized);
+      }
       setCast(normalized);
       setStep('cast');
       setSelected(new Set());
@@ -95,7 +158,7 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
         <div className="flex flex-col flex-1 overflow-hidden">
           <div className="p-3 flex gap-2">
             <Input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search movie or show..." className="h-8 text-sm bg-secondary border-border" onKeyDown={e => e.key === 'Enter' && searchTMDB()} />
-            <Button size="sm" variant="secondary" onClick={searchTMDB} disabled={loading} className="h-8 px-2">
+            <Button size="sm" variant="secondary" onClick={() => searchTMDB()} disabled={loading} className="h-8 px-2">
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
             </Button>
           </div>
@@ -117,6 +180,18 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
                 </div>
               </button>
             ))}
+            {results.length > 0 && searchPage < totalPages && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={loadMoreResults}
+                disabled={loadingMore}
+                className="w-full mt-2 text-xs text-muted-foreground"
+              >
+                {loadingMore ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+                Load more results
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -126,6 +201,7 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
           <div className="p-3 border-b border-border">
             <button onClick={() => setStep('search')} className="text-xs text-primary hover:underline">← Back to search</button>
             <p className="text-sm font-medium mt-1">{selectedTitle}</p>
+            <p className="text-xs text-muted-foreground">{cast.length} cast members</p>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
             {cast.map(c => (
