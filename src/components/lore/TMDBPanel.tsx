@@ -197,15 +197,21 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
         </div>
       )}
 
-      {apiKey && step === 'cast' && (
+      {apiKey && step === 'cast' && (() => {
+        const q = castFilter.toLowerCase();
+        const filteredCast = q ? cast.filter(c => c.character.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)) : cast;
+        return (
         <div className="flex flex-col flex-1 overflow-hidden">
           <div className="p-3 border-b border-border">
-            <button onClick={() => setStep('search')} className="text-xs text-primary hover:underline">← Back to search</button>
+            <button onClick={() => { setStep('search'); setCastFilter(''); }} className="text-xs text-primary hover:underline">← Back to search</button>
             <p className="text-sm font-medium mt-1">{selectedTitle}</p>
             <p className="text-xs text-muted-foreground">{cast.length} cast members</p>
           </div>
+          <div className="px-3 pt-2">
+            <Input value={castFilter} onChange={e => setCastFilter(e.target.value)} placeholder="Filter characters..." className="h-7 text-xs bg-secondary border-border" />
+          </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
-            {cast.map(c => (
+            {filteredCast.map(c => (
               <label key={c.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-accent transition-colors cursor-pointer">
                 <Checkbox
                   checked={selected.has(c.id)}
