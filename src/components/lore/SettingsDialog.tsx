@@ -72,11 +72,11 @@ export default function SettingsDialog({ open, onOpenChange, onAfterSave }: Prop
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-card border-border max-w-md max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="bg-card border-border max-w-md max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+        <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-2">
           <DialogTitle className="text-foreground">Settings</DialogTitle>
         </DialogHeader>
-        <div className="space-y-6">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 space-y-6">
           {/* TMDB */}
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">TMDB API Key</Label>
@@ -150,26 +150,30 @@ export default function SettingsDialog({ open, onOpenChange, onAfterSave }: Prop
             )}
           </div>
 
+          </div>
+        <div className="flex-shrink-0 p-6 pt-3 border-t border-border bg-card">
           <Button onClick={handleSave} className="w-full">Save</Button>
         </div>
       </DialogContent>
 
       {/* Setup script modal */}
       <Dialog open={scriptModalOpen} onOpenChange={setScriptModalOpen}>
-        <DialogContent className="bg-card border-border max-w-2xl min-w-[28rem] max-h-[85vh] flex flex-col">
-          <DialogHeader>
+        <DialogContent className="bg-card border-border max-w-2xl min-w-[28rem] max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden">
+          <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-2">
             <DialogTitle className="text-foreground">Supabase setup script</DialogTitle>
           </DialogHeader>
-          <p className="text-xs text-muted-foreground">
+          <p className="flex-shrink-0 px-6 text-xs text-muted-foreground">
             Run this once in Supabase: <strong>SQL Editor</strong> → <strong>New query</strong> → paste → <strong>Run</strong>.
           </p>
-          <pre className="flex-1 min-h-0 text-xs bg-secondary/80 p-4 rounded-md overflow-auto border border-border font-mono whitespace-pre">
+          <pre className="flex-1 min-h-0 text-xs bg-secondary/80 mx-6 mt-2 mb-2 p-4 rounded-md overflow-auto border border-border font-mono whitespace-pre">
             {SUPABASE_SETUP_SQL}
           </pre>
-          <Button type="button" variant="outline" size="sm" onClick={copySetupSql} className="self-start">
-            {sqlCopied ? <Check className="w-3 h-3 mr-1" /> : <Copy className="w-3 h-3 mr-1" />}
-            {sqlCopied ? 'Copied' : 'Copy script'}
-          </Button>
+          <div className="flex-shrink-0 p-6 pt-3 border-t border-border bg-card">
+            <Button type="button" variant="outline" size="sm" onClick={copySetupSql}>
+              {sqlCopied ? <Check className="w-3 h-3 mr-1" /> : <Copy className="w-3 h-3 mr-1" />}
+              {sqlCopied ? 'Copied' : 'Copy script'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </Dialog>

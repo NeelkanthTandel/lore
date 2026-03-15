@@ -30,7 +30,10 @@ import { getMap, saveMap } from '@/store/mapStore';
 import { mergeInferredEdges } from '@/lib/relationInference';
 import { CharacterNodeData, RelationshipEdgeData, LoreMap, TmdbMediaRef } from '@/types/lore';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Film, Settings, Download, Shuffle, UserPlus } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { ArrowLeft, Film, Settings, Download, Shuffle, UserPlus, ImageIcon } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
 const nodeTypes = { character: CharacterNode };
@@ -49,6 +52,8 @@ function MapEditorInner() {
   const [editingEdge, setEditingEdge] = useState<Edge<RelationshipEdgeData> | null>(null);
   const [tmdbOpen, setTmdbOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [thumbnailPopoverOpen, setThumbnailPopoverOpen] = useState(false);
+  const [thumbnailUrlInput, setThumbnailUrlInput] = useState('');
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
 
   const { takeSnapshot, undo, redo } = useUndoRedo();
@@ -299,6 +304,83 @@ function MapEditorInner() {
         </div>
         <div className="flex items-center gap-2 pointer-events-auto">
           <SearchBar />
+          <Popover open={thumbnailPopoverOpen} onOpenChange={(open) => { setThumbnailPopoverOpen(open); if (open) setThumbnailUrlInput(map?.thumbnailUrl ?? ''); }}>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="icon" title="Map thumbnail (for home card)">
+                <ImageIcon className="w-4 h-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80" align="end">
+              <div className="space-y-2">
+                <Label className="text-xs">Map thumbnail URL</Label>
+                <p className="text-xs text-muted-foreground">Shown on the home page card. Linking a movie/show in TMDB sets this automatically.</p>
+                <Input
+                  value={thumbnailUrlInput}
+                  onChange={e => setThumbnailUrlInput(e.target.value)}
+                  placeholder="https://..."
+                  className="text-sm"
+                />
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={async () => {
+                    if (!map) return;
+                    const url = thumbnailUrlInput.trim() || undefined;
+                    const updated: LoreMap = {
+                      ...map,
+                      thumbnailUrl: url,
+                      updatedAt: new Date().toISOString(),
+                      nodes: nodes.map(n => ({ id: n.id, type: 'character', position: n.position, data: n.data as CharacterNodeData })),
+                      edges: edges.map(e => ({
+                        id: e.id,
+                        source: e.source,
+                        target: e.target,
+                        sourceHandle: e.sourceHandle ?? null,
+                        targetHandle: e.targetHandle ?? null,
+                        type: 'relationship',
+                        data: e.data as RelationshipEdgeData,
+                      })),
+                    };
+                    setMap(updated);
+                    try {
+                      await saveMap(updated);
+                      setThumbnailPopoverOpen(false);
+                    } catch (err) {
+                      console.error(err);
+                    }
+                  }}>
+                    Set
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={async () => {
+                    if (!map) return;
+                    setThumbnailUrlInput('');
+                    const updated: LoreMap = {
+                      ...map,
+                      thumbnailUrl: undefined,
+                      updatedAt: new Date().toISOString(),
+                      nodes: nodes.map(n => ({ id: n.id, type: 'character', position: n.position, data: n.data as CharacterNodeData })),
+                      edges: edges.map(e => ({
+                        id: e.id,
+                        source: e.source,
+                        target: e.target,
+                        sourceHandle: e.sourceHandle ?? null,
+                        targetHandle: e.targetHandle ?? null,
+                        type: 'relationship',
+                        data: e.data as RelationshipEdgeData,
+                      })),
+                    };
+                    setMap(updated);
+                    try {
+                      await saveMap(updated);
+                      setThumbnailPopoverOpen(false);
+                    } catch (err) {
+                      console.error(err);
+                    }
+                  }}>
+                    Clear
+                  </Button>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
           <Button variant="ghost" size="icon" onClick={() => setTmdbOpen(true)} title="Add from Movie/Show">
             <Film className="w-4 h-4" />
           </Button>
@@ -372,7 +454,14 @@ function MapEditorInner() {
         defaultMedia={map?.tmdbMedia ?? null}
         defaultSeason={map?.tmdbSeason ?? '1'}
         onSetDefaultMedia={(media: TmdbMediaRef) => {
-          setMap(m => m ? { ...m, tmdbMedia: media, tmdbSeason: '1', updatedAt: new Date().toISOString() } : null);
+          const thumb = media.poster_path ? `https://image.tmdb.org/t/p/w342${media.poster_path}` : undefined;
+          setMap(m => m ? {
+            ...m,
+            tmdbMedia: media,
+            tmdbSeason: '1',
+            ...(thumb != null && { thumbnailUrl: thumb }),
+            updatedAt: new Date().toISOString(),
+          } : null);
         }}
         onSeasonChange={(season) => {
           setMap(m => m ? { ...m, tmdbSeason: season, updatedAt: new Date().toISOString() } : null);

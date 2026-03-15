@@ -96,3 +96,38 @@
 .react-flow__controls-button:hover {
   background-color: hsl(240 4% 20%) !important;
 }
+
+/* Custom scrollbars (all scrollable areas) */
+.scroll-custom,
+[class*="overflow-y-auto"],
+[class*="overflow-auto"] {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(240 4% 30%) transparent;
+}
+.scroll-custom::-webkit-scrollbar,
+[class*="overflow-y-auto"]::-webkit-scrollbar,
+[class*="overflow-auto"]::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-custom::-webkit-scrollbar-track,
+[class*="overflow-y-auto"]::-webkit-scrollbar-track,
+[class*="overflow-auto"]::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-custom::-webkit-scrollbar-thumb,
+[class*="overflow-y-auto"]::-webkit-scrollbar-thumb,
+[class*="overflow-auto"]::-webkit-scrollbar-thumb {
+  background: hsl(240 4% 30%);
+  border-radius: 4px;
+}
+.scroll-custom::-webkit-scrollbar-thumb:hover,
+[class*="overflow-y-auto"]::-webkit-scrollbar-thumb:hover,
+[class*="overflow-auto"]::-webkit-scrollbar-thumb:hover {
+  background: hsl(240 4% 40%);
+}
+.scroll-custom::-webkit-scrollbar-corner,
+[class*="overflow-y-auto"]::-webkit-scrollbar-corner,
+[class*="overflow-auto"]::-webkit-scrollbar-corner {
+  background: transparent;
+}

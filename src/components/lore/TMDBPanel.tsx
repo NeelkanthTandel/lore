@@ -157,6 +157,7 @@ export default function TMDBPanel({
       id: item.id,
       media_type: item.media_type === 'tv' ? 'tv' : 'movie',
       title: title ?? '',
+      poster_path: item.poster_path ?? null,
     });
     if (item.media_type === 'tv') {
       setLoading(true);

@@ -23,6 +23,8 @@ export interface TmdbMediaRef {
   id: number;
   media_type: 'movie' | 'tv';
   title: string;
+  /** Poster path for map thumbnail (e.g. "/abc123.jpg"). */
+  poster_path?: string | null;
 }
 
 export interface LoreMap {
@@ -36,6 +38,8 @@ export interface LoreMap {
   tmdbMedia?: TmdbMediaRef;
   /** For TV: which season's cast to show (default "1"). Persisted per map. */
   tmdbSeason?: string;
+  /** Optional thumbnail URL for the map card (custom or from TMDB poster). */
+  thumbnailUrl?: string;
 }
 
 export interface SerializedNode {

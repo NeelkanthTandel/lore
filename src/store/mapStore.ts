@@ -86,6 +86,7 @@ interface LoreMapRow {
   edges: LoreMap['edges'];
   tmdb_media: LoreMap['tmdbMedia'] | null;
   tmdb_season: string | null;
+  thumbnail_url: string | null;
 }
 
 function rowToMap(r: LoreMapRow): LoreMap {
@@ -98,11 +99,13 @@ function rowToMap(r: LoreMapRow): LoreMap {
     edges: r.edges ?? [],
     ...(r.tmdb_media && { tmdbMedia: r.tmdb_media }),
     ...(r.tmdb_season != null && r.tmdb_season !== '' && { tmdbSeason: r.tmdb_season }),
+    ...(r.thumbnail_url && r.thumbnail_url.trim() !== '' && { thumbnailUrl: r.thumbnail_url.trim() }),
   };
 }
 
-function mapToRow(m: LoreMap): LoreMapRow {
-  return {
+/** Build row for Supabase. Omit thumbnail_url when empty so older tables without the column still work. */
+function mapToRow(m: LoreMap): Record<string, unknown> {
+  const row: Record<string, unknown> = {
     id: m.id,
     title: m.title,
     created_at: m.createdAt,
@@ -112,6 +115,9 @@ function mapToRow(m: LoreMap): LoreMapRow {
     tmdb_media: m.tmdbMedia ?? null,
     tmdb_season: m.tmdbSeason ?? null,
   };
+  const thumb = m.thumbnailUrl?.trim();
+  if (thumb) row.thumbnail_url = thumb;
+  return row;
 }
 
 // --- Async API (Supabase when configured, else local) ---
@@ -142,7 +148,7 @@ export async function getMap(id: string): Promise<LoreMap | undefined> {
 export async function saveMap(map: LoreMap): Promise<void> {
   const supabase = getSupabaseClient();
   if (supabase) {
-    const row = mapToRow(map);
+    const row = mapToRow(map) as Record<string, unknown>;
     const { error } = await supabase.from(LORE_MAPS_TABLE).upsert(row, { onConflict: 'id' });
     if (error) throw error;
     return;
@@ -201,13 +207,28 @@ create table if not exists lore_maps (
   nodes jsonb default '[]',
   edges jsonb default '[]',
   tmdb_media jsonb,
-  tmdb_season text
+  tmdb_season text,
+  thumbnail_url text
 );
 
--- Allow all for anon (your project = your data; only you have the key)
+-- If table already exists, add thumbnail_url (run if you had lore_maps before)
+-- alter table lore_maps add column if not exists thumbnail_url text;
+
+-- Row-level security: allow anon full access (you control who has the anon key)
 alter table lore_maps enable row level security;
+
+-- Remove any existing policies so we start clean
 drop policy if exists "Allow all for anon" on lore_maps;
-create policy "Allow all for anon" on lore_maps for all using (true) with check (true);
+drop policy if exists "lore_maps_select" on lore_maps;
+drop policy if exists "lore_maps_insert" on lore_maps;
+drop policy if exists "lore_maps_update" on lore_maps;
+drop policy if exists "lore_maps_delete" on lore_maps;
+
+-- Explicit policies per command (avoids RLS 42501 on insert)
+create policy "lore_maps_select" on lore_maps for select using (true);
+create policy "lore_maps_insert" on lore_maps for insert with check (true);
+create policy "lore_maps_update" on lore_maps for update using (true) with check (true);
+create policy "lore_maps_delete" on lore_maps for delete using (true);
 `;
 
 // --- TMDB ---
