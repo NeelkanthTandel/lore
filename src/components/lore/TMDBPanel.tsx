@@ -239,7 +239,8 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
             </Button>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
