@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Edge } from '@xyflow/react';
 import { RelationshipEdgeData } from '@/types/lore';
+import { RELATION_PRESETS } from '@/lib/relationPresets';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -13,41 +14,31 @@ interface Props {
   onClose: () => void;
 }
 
-const RELATIONSHIP_PRESETS = [
-  { label: 'Father of', direction: 'one-way' as const },
-  { label: 'Mother of', direction: 'one-way' as const },
-  { label: 'Son of', direction: 'one-way' as const },
-  { label: 'Daughter of', direction: 'one-way' as const },
-  { label: 'Married to', direction: 'two-way' as const },
-  { label: 'Sibling', direction: 'two-way' as const },
-  { label: 'Friend', direction: 'two-way' as const },
-  { label: 'Enemy', direction: 'two-way' as const },
-  { label: 'Mentor of', direction: 'one-way' as const },
-  { label: 'Works with', direction: 'two-way' as const },
-  { label: 'Loves', direction: 'one-way' as const },
-  { label: 'Betrayed', direction: 'one-way' as const },
-];
+const PRESETS_FOR_UI = RELATION_PRESETS.filter(p => p.id !== 'custom');
 
 export default function EdgeEditPanel({ edge, onUpdate, onClose }: Props) {
   const [label, setLabel] = useState(edge.data?.label || '');
   const [direction, setDirection] = useState<'one-way' | 'two-way' | 'undirected'>(edge.data?.direction || 'undirected');
+  const [relationType, setRelationType] = useState(edge.data?.relationType || '');
   const [color, setColor] = useState(edge.data?.color || '#888888');
   const [style, setStyle] = useState<'solid' | 'dashed' | 'dotted'>(edge.data?.style || 'solid');
 
   useEffect(() => {
     setLabel(edge.data?.label || '');
     setDirection(edge.data?.direction || 'undirected');
+    setRelationType(edge.data?.relationType || '');
     setColor(edge.data?.color || '#888888');
     setStyle(edge.data?.style || 'solid');
   }, [edge]);
 
-  const applyPreset = (preset: typeof RELATIONSHIP_PRESETS[0]) => {
+  const applyPreset = (preset: (typeof RELATION_PRESETS)[0]) => {
     setLabel(preset.label);
     setDirection(preset.direction);
+    setRelationType(preset.id);
   };
 
   const handleSave = () => {
-    onUpdate(edge.id, { label, direction, color, style });
+    onUpdate(edge.id, { label, direction, relationType: relationType || undefined, color, style });
     onClose();
   };
 
@@ -60,16 +51,16 @@ export default function EdgeEditPanel({ edge, onUpdate, onClose }: Props) {
         </button>
       </div>
 
-      {/* Quick presets */}
+      {/* Quick presets (used for inference) */}
       <div className="space-y-1.5">
-        <Label className="text-xs text-muted-foreground">Quick presets</Label>
+        <Label className="text-xs text-muted-foreground">Relation type</Label>
         <div className="flex flex-wrap gap-1">
-          {RELATIONSHIP_PRESETS.map(p => (
+          {PRESETS_FOR_UI.map(p => (
             <button
-              key={p.label}
+              key={p.id}
               onClick={() => applyPreset(p)}
               className={`text-[11px] px-2 py-1 rounded-full border transition-all ${
-                label === p.label
+                relationType === p.id
                   ? 'bg-primary/20 border-primary/50 text-primary'
                   : 'bg-secondary/50 border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground'
               }`}

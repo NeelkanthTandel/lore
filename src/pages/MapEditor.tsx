@@ -27,7 +27,8 @@ import SettingsDialog from '@/components/lore/SettingsDialog';
 import SearchBar from '@/components/lore/SearchBar';
 import { useUndoRedo } from '@/hooks/useUndoRedo';
 import { getMap, saveMap } from '@/store/mapStore';
-import { CharacterNodeData, RelationshipEdgeData, LoreMap } from '@/types/lore';
+import { mergeInferredEdges } from '@/lib/relationInference';
+import { CharacterNodeData, RelationshipEdgeData, LoreMap, TmdbMediaRef } from '@/types/lore';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Film, Settings, Download, Shuffle, UserPlus } from 'lucide-react';
 import html2canvas from 'html2canvas';
@@ -55,12 +56,28 @@ function MapEditorInner() {
   // Load map
   useEffect(() => {
     if (!id) return;
-    const loaded = getMap(id);
-    if (!loaded) { navigate('/'); return; }
-    setMap(loaded);
-    setNodes(loaded.nodes.map(n => ({ ...n, type: 'character' })) as Node[]);
-    setEdges(loaded.edges.map(e => ({ ...e, type: 'relationship' })) as Edge[]);
-  }, [id]);
+    let cancelled = false;
+    getMap(id).then(loaded => {
+      if (cancelled) return;
+      if (!loaded) { navigate('/'); return; }
+      setMap(loaded);
+      setNodes(loaded.nodes.map(n => ({ ...n, type: 'character' })) as Node[]);
+      setEdges(loaded.edges.map(e => ({
+        ...e,
+        type: 'relationship',
+        sourceHandle: e.sourceHandle ?? 'bottom',
+        targetHandle: e.targetHandle ?? 'top',
+      })) as Edge[]);
+    });
+    return () => { cancelled = true; };
+  }, [id, navigate]);
+
+  // When map has no nodes and no linked movie/show, auto-open TMDB panel so user can optionally select one.
+  useEffect(() => {
+    if (map && map.nodes.length === 0 && !map.tmdbMedia) {
+      setTmdbOpen(true);
+    }
+  }, [map?.id, map?.nodes.length, map?.tmdbMedia]);
 
   // Autosave
   const saveTimeout = useRef<ReturnType<typeof setTimeout>>();
@@ -70,10 +87,50 @@ function MapEditorInner() {
       ...map,
       updatedAt: new Date().toISOString(),
       nodes: nodes.map(n => ({ id: n.id, type: 'character', position: n.position, data: n.data as CharacterNodeData })),
-      edges: edges.map(e => ({ id: e.id, source: e.source, target: e.target, type: 'relationship', data: e.data as RelationshipEdgeData })),
+      edges: edges.map(e => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle ?? null,
+        targetHandle: e.targetHandle ?? null,
+        type: 'relationship',
+        data: e.data as RelationshipEdgeData,
+      })),
     };
-    saveMap(updated);
+    void saveMap(updated);
   }, [map, nodes, edges]);
+
+  // Run relation inference: replace inferred edges with newly computed ones from base edges.
+  // Sibling edges use side handles: left node → right handle, right node → left handle.
+  useEffect(() => {
+    if (!map) return;
+    const run = () => {
+      const merged = mergeInferredEdges(edges as Edge<RelationshipEdgeData>[]);
+      const withSmartSiblingHandles = merged.map(e => {
+        if (e.data?.relationType !== 'sibling_of' || !e.data?.inferred) return e;
+        const srcNode = nodes.find(n => n.id === e.source);
+        const tgtNode = nodes.find(n => n.id === e.target);
+        if (!srcNode || !tgtNode) return e;
+        const sourceIsLeft = srcNode.position.x < tgtNode.position.x;
+        return {
+          ...e,
+          sourceHandle: sourceIsLeft ? 'right' : 'left',
+          targetHandle: sourceIsLeft ? 'left' : 'right',
+        };
+      });
+      setEdges(prev => {
+        const same =
+          withSmartSiblingHandles.length === prev.length &&
+          withSmartSiblingHandles.every(e => {
+            const p = prev.find(x => x.id === e.id);
+            return p && p.source === e.source && p.target === e.target && p.sourceHandle === e.sourceHandle && p.targetHandle === e.targetHandle;
+          });
+        return same ? prev : (withSmartSiblingHandles as Edge[]);
+      });
+    };
+    const t = setTimeout(run, 0);
+    return () => clearTimeout(t);
+  }, [map, edges, nodes]);
 
   useEffect(() => {
     clearTimeout(saveTimeout.current);
@@ -107,11 +164,19 @@ function MapEditorInner() {
 
   const onConnect = useCallback((connection: Connection) => {
     takeSnapshot(nodes, edges);
-    setEdges(eds => addEdge({
+    const newEdgeId = crypto.randomUUID();
+    const newEdge: Edge = {
       ...connection,
+      id: newEdgeId,
       type: 'relationship',
       data: { label: '', direction: 'undirected', color: '#888888', style: 'solid' } as RelationshipEdgeData,
-    }, eds));
+    };
+    setEdges(eds => addEdge(newEdge, eds));
+    // Auto-open edit panel for the newly created edge
+    setTimeout(() => {
+      setEditingEdge(newEdge as Edge<RelationshipEdgeData>);
+      setEditingNode(null);
+    }, 0);
   }, [nodes, edges, takeSnapshot]);
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
@@ -300,7 +365,19 @@ function MapEditorInner() {
       )}
 
       {/* TMDB Panel */}
-      <TMDBPanel open={tmdbOpen} onClose={() => setTmdbOpen(false)} onAddCharacters={handleTmdbAdd} />
+      <TMDBPanel
+        open={tmdbOpen}
+        onClose={() => setTmdbOpen(false)}
+        onAddCharacters={handleTmdbAdd}
+        defaultMedia={map?.tmdbMedia ?? null}
+        defaultSeason={map?.tmdbSeason ?? '1'}
+        onSetDefaultMedia={(media: TmdbMediaRef) => {
+          setMap(m => m ? { ...m, tmdbMedia: media, tmdbSeason: '1', updatedAt: new Date().toISOString() } : null);
+        }}
+        onSeasonChange={(season) => {
+          setMap(m => m ? { ...m, tmdbSeason: season, updatedAt: new Date().toISOString() } : null);
+        }}
+      />
 
       {/* Settings */}
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />

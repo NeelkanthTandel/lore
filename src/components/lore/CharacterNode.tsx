@@ -7,9 +7,13 @@ type CharacterNodeType = Node<CharacterNodeData, 'character'>;
 const CharacterNode = memo(({ data, selected }: NodeProps<CharacterNodeType>) => {
   const ringColor = data.ringColor || '#c8a44e';
 
+  const handleClass = '!bg-muted-foreground !w-2 !h-2 !border-none opacity-0 group-hover:opacity-100 transition-opacity';
+
   return (
-    <div className="flex flex-col items-center gap-1.5 group">
-      <Handle type="target" position={Position.Top} className="!bg-muted-foreground !w-2 !h-2 !border-none opacity-0 group-hover:opacity-100 transition-opacity" />
+    <div className="flex flex-col items-center gap-1.5 group relative">
+      {/* Top: target (incoming), Bottom: source (outgoing), Left: target, Right: source — so couples can connect side by side */}
+      <Handle type="target" position={Position.Top} id="top" className={handleClass} />
+      <Handle type="target" position={Position.Left} id="left" className={handleClass} />
 
       <div
         className="relative w-20 h-20 rounded-full overflow-hidden transition-all duration-200"
@@ -50,7 +54,8 @@ const CharacterNode = memo(({ data, selected }: NodeProps<CharacterNodeType>) =>
         </span>
       )}
 
-      <Handle type="source" position={Position.Bottom} className="!bg-muted-foreground !w-2 !h-2 !border-none opacity-0 group-hover:opacity-100 transition-opacity" />
+      <Handle type="source" position={Position.Bottom} id="bottom" className={handleClass} />
+      <Handle type="source" position={Position.Right} id="right" className={handleClass} />
     </div>
   );
 });

@@ -1,16 +1,24 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { getTmdbApiKey } from '@/store/mapStore';
-import { TMDBSearchResult, TMDBCastMember } from '@/types/lore';
+import { TMDBSearchResult, TMDBCastMember, TmdbMediaRef } from '@/types/lore';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { X, Search, Film, Loader2, Check, AlertTriangle } from 'lucide-react';
+import { X, Search, Film, Loader2, Check } from 'lucide-react';
 
 interface Props {
   open: boolean;
   onClose: () => void;
   onAddCharacters: (characters: { name: string; photo: string }[]) => void;
+  /** When set, panel opens straight to character list (no search step). */
+  defaultMedia?: TmdbMediaRef | null;
+  /** For TV: season to show (default "1"). Persisted per map. */
+  defaultSeason?: string;
+  /** Call when user selects a movie/show so map can save it as default. */
+  onSetDefaultMedia?: (media: TmdbMediaRef) => void;
+  /** Call when user changes season (TV) so map can persist it. */
+  onSeasonChange?: (season: string) => void;
 }
 
 const TMDB_IMG = 'https://image.tmdb.org/t/p/w185';
@@ -35,9 +43,17 @@ function setCache(key: string, data: unknown) {
   } catch { /* quota exceeded */ }
 }
 
-type Step = 'search' | 'season' | 'cast';
+type Step = 'search' | 'cast';
 
-export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
+export default function TMDBPanel({
+  open,
+  onClose,
+  onAddCharacters,
+  defaultMedia,
+  defaultSeason = '1',
+  onSetDefaultMedia,
+  onSeasonChange,
+}: Props) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<TMDBSearchResult[]>([]);
   const [cast, setCast] = useState<TMDBCastMember[]>([]);
@@ -50,13 +66,49 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
   const [totalPages, setTotalPages] = useState(1);
   const [castFilter, setCastFilter] = useState('');
   const [addedCount, setAddedCount] = useState(0);
-  // Season selection state
   const [selectedItem, setSelectedItem] = useState<TMDBSearchResult | null>(null);
   const [totalSeasons, setTotalSeasons] = useState(0);
-  const [selectedSeason, setSelectedSeason] = useState<string>('all');
+  const [selectedSeason, setSelectedSeason] = useState<string>(defaultSeason);
   const lastQuery = useRef('');
 
   const apiKey = getTmdbApiKey();
+
+  // When panel opens with a default movie/show, go straight to character list.
+  useEffect(() => {
+    if (!open || !apiKey || !defaultMedia) return;
+    const synthetic: TMDBSearchResult = {
+      id: defaultMedia.id,
+      media_type: defaultMedia.media_type,
+      title: defaultMedia.title,
+      name: defaultMedia.media_type === 'tv' ? defaultMedia.title : undefined,
+      poster_path: null,
+      release_date: undefined,
+      first_air_date: undefined,
+    };
+    setSelectedItem(synthetic);
+    setSelectedTitle(defaultMedia.title);
+    const season = defaultSeason || '1';
+    setSelectedSeason(season);
+    if (defaultMedia.media_type === 'tv') {
+      fetchTvSeasons(synthetic).then(n => setTotalSeasons(n));
+    }
+    void fetchCast(synthetic, season);
+    setStep('cast');
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only run when panel opens or defaultMedia changes, not when defaultSeason changes
+  }, [open, apiKey, defaultMedia?.id, defaultMedia?.media_type, defaultMedia?.title]);
+
+  async function fetchTvSeasons(item: TMDBSearchResult): Promise<number> {
+    const cacheKey = `tvdetails:${item.id}`;
+    const cached = getCached<{ number_of_seasons: number }>(cacheKey);
+    if (cached) return cached.number_of_seasons ?? 1;
+    try {
+      const res = await fetch(`https://api.themoviedb.org/3/tv/${item.id}?api_key=${apiKey}`);
+      const details = await res.json();
+      const n = details.number_of_seasons || 1;
+      setCache(cacheKey, { number_of_seasons: n });
+      return n;
+    } catch { return 1; }
+  }
 
   const searchTMDB = async (page = 1, append = false) => {
     if (!query.trim() || !apiKey) return;
@@ -98,33 +150,21 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
   };
 
   const handleSelectResult = async (item: TMDBSearchResult) => {
+    const title = item.title || item.name || '';
+    setSelectedItem(item);
+    setSelectedTitle(title);
+    onSetDefaultMedia?.({
+      id: item.id,
+      media_type: item.media_type === 'tv' ? 'tv' : 'movie',
+      title: title ?? '',
+    });
     if (item.media_type === 'tv') {
-      // Fetch TV details to get number of seasons
       setLoading(true);
-      setSelectedItem(item);
-      setSelectedTitle(item.name || item.title || '');
-
-      const cacheKey = `tvdetails:${item.id}`;
-      const cached = getCached<{ number_of_seasons: number }>(cacheKey);
-
-      try {
-        let details: { number_of_seasons: number };
-        if (cached) {
-          details = cached;
-        } else {
-          const res = await fetch(
-            `https://api.themoviedb.org/3/tv/${item.id}?api_key=${apiKey}`
-          );
-          details = await res.json();
-          setCache(cacheKey, details);
-        }
-        setTotalSeasons(details.number_of_seasons || 1);
-        setSelectedSeason('all');
-        setStep('season');
-      } catch {
-        // Fallback: skip season selection
-        fetchCast(item, 'all');
-      }
+      const n = await fetchTvSeasons(item);
+      setTotalSeasons(n);
+      const season = defaultSeason || '1';
+      setSelectedSeason(season);
+      await fetchCast(item, season);
       setLoading(false);
     } else {
       fetchCast(item, 'all');
@@ -161,11 +201,11 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
         const res = await fetch(url);
         const data = await res.json();
         const rawCast = data.cast || [];
-        normalized = rawCast.map((c: any) => ({
+        normalized = rawCast.map((c: { id: number; name: string; character?: string; profile_path?: string | null; roles?: { character: string }[] }) => ({
           id: c.id,
           name: c.name,
           character: c.character || c.roles?.[0]?.character || c.name,
-          profile_path: c.profile_path,
+          profile_path: c.profile_path ?? null,
         }));
         setCache(cacheKey, normalized);
       }
@@ -253,68 +293,39 @@ export default function TMDBPanel({ open, onClose, onAddCharacters }: Props) {
         </div>
       )}
 
-      {/* Season selection step (TV only) */}
-      {apiKey && step === 'season' && (
-        <div className="flex flex-col flex-1 overflow-hidden">
-          <div className="p-3 border-b border-border">
-            <button onClick={() => { setStep('search'); setSelectedItem(null); }} className="text-xs text-primary hover:underline">← Back to search</button>
-            <p className="text-sm font-medium mt-1">{selectedTitle}</p>
-          </div>
-          <div className="p-4 space-y-4">
-            <div className="flex items-start gap-2 p-3 rounded-md bg-secondary/50 border border-border">
-              <AlertTriangle className="w-4 h-4 text-yellow-500 mt-0.5 shrink-0" />
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Some shows reveal character identities across seasons. Choose the latest season you've watched to avoid spoilers, or skip to see all characters.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">Show characters up to season:</label>
-              <Select value={selectedSeason} onValueChange={setSelectedSeason}>
-                <SelectTrigger className="h-9 text-sm bg-secondary border-border">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All seasons</SelectItem>
-                  {Array.from({ length: totalSeasons }, (_, i) => (
-                    <SelectItem key={i + 1} value={String(i + 1)}>Season {i + 1}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                className="flex-1"
-                onClick={() => fetchCast(selectedItem, selectedSeason)}
-                disabled={loading}
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
-                Show Characters
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Cast step */}
       {apiKey && step === 'cast' && (() => {
         const q = castFilter.toLowerCase();
         const filteredCast = q ? cast.filter(c => c.character.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)) : cast;
+        const isTV = selectedItem?.media_type === 'tv';
         return (
           <div className="flex flex-col flex-1 overflow-hidden">
-            <div className="p-3 border-b border-border">
-              <button onClick={() => {
-                setCastFilter('');
-                if (selectedItem?.media_type === 'tv') {
-                  setStep('season');
-                } else {
-                  setStep('search');
-                  setSelectedItem(null);
-                }
-              }} className="text-xs text-primary hover:underline">← Back</button>
-              <p className="text-sm font-medium mt-1">{selectedTitle}</p>
+            <div className="p-3 border-b border-border space-y-2">
+              <button onClick={() => { setCastFilter(''); setStep('search'); setSelectedItem(null); }} className="text-xs text-primary hover:underline">← Back to search</button>
+              <p className="text-sm font-medium">{selectedTitle}</p>
+              {isTV && totalSeasons > 0 && (
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-muted-foreground shrink-0">Season:</label>
+                  <Select
+                    value={selectedSeason}
+                    onValueChange={(val) => {
+                      setSelectedSeason(val);
+                      onSeasonChange?.(val);
+                      fetchCast(selectedItem, val);
+                    }}
+                  >
+                    <SelectTrigger className="h-7 text-xs bg-secondary border-border flex-1 min-w-0">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All seasons</SelectItem>
+                      {Array.from({ length: totalSeasons }, (_, i) => (
+                        <SelectItem key={i + 1} value={String(i + 1)}>Season {i + 1}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <p className="text-xs text-muted-foreground">
                 {cast.length} cast members
                 {addedCount > 0 && <span className="text-green-500 ml-2">· {addedCount} added</span>}

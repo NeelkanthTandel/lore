@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Home from "./pages/Home";
 import MapEditor from "./pages/MapEditor";
+import Access from "./pages/Access";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -18,6 +19,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/map/:id" element={<MapEditor />} />
+          <Route path="/access/:projectRef" element={<Access />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
